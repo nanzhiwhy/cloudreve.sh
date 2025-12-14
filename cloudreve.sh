@@ -15,14 +15,14 @@ Error="[${Red_font_prefix}错误${Font_color_suffix}]"
 Tip="[${Green_font_prefix}注意${Font_color_suffix}]"
 
 # 配置变量
-CLOUDREVE_PATH="./cloudreve"
+WORK_DIR=$(pwd)
+CLOUDREVE_PATH="${WORK_DIR}/cloudreve"
 LICENSE_KEY=""
-LICENSE_KEY_FILE="./cloudreve_license.conf"
-VERSION_TYPE_FILE="./cloudreve_version.conf"
+LICENSE_KEY_FILE="${WORK_DIR}/cloudreve_license.conf"
+VERSION_TYPE_FILE="${WORK_DIR}/cloudreve_version.conf"
 VERSION_TYPE=""
 PID_FILE="/var/run/cloudreve.pid"
-LOG_FILE="./cloudreve.log"
-WORK_DIR=$(pwd)
+LOG_FILE="${WORK_DIR}/cloudreve.log"
 
 check_root() {
     [[ $EUID != 0 ]] && echo -e "${Error} 当前非ROOT账号(或没有ROOT权限)，无法继续操作，请更换ROOT账号或使用 ${Green_background_prefix}sudo su${Font_color_suffix} 命令获取临时ROOT权限。" && exit 1
@@ -218,16 +218,20 @@ start_cloudreve() {
         chmod +x "${CLOUDREVE_PATH}"
     fi
     
-    # 后台运行 Cloudreve
+    # 后台运行 Cloudreve，使用 setsid 确保完全脱离终端
     cd "${WORK_DIR}"
     if [[ "${VERSION_TYPE}" == "pro" ]]; then
-        nohup ${CLOUDREVE_PATH} --license-key "${LICENSE_KEY}" >> ${LOG_FILE} 2>&1 &
+        nohup setsid ${CLOUDREVE_PATH} --license-key "${LICENSE_KEY}" >> ${LOG_FILE} 2>&1 &
     else
-        nohup ${CLOUDREVE_PATH} >> ${LOG_FILE} 2>&1 &
+        nohup setsid ${CLOUDREVE_PATH} >> ${LOG_FILE} 2>&1 &
     fi
     
     # 保存 PID
-    echo $! > ${PID_FILE}
+    NEW_PID=$!
+    echo ${NEW_PID} > ${PID_FILE}
+    
+    # 使用 disown 确保进程完全脱离 shell
+    disown ${NEW_PID} 2>/dev/null || true
     
     sleep 2
     
@@ -647,8 +651,13 @@ PID_FILE="/var/run/cloudreve.pid"
 # 读取版本类型
 if [[ -f "\${VERSION_TYPE_FILE}" ]]; then
     VERSION_TYPE=\$(cat "\${VERSION_TYPE_FILE}" | tr '[:upper:]' '[:lower:]')
+    if [[ "\${VERSION_TYPE}" != "pro" ]] && [[ "\${VERSION_TYPE}" != "community" ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 错误: 版本类型文件内容无效，应为 'pro' 或 'community'，文件路径: \${VERSION_TYPE_FILE}" >> \${LOG_FILE}
+        exit 1
+    fi
 else
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 错误: 找不到版本类型文件" >> \${LOG_FILE}
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 错误: 找不到版本类型文件，文件路径: \${VERSION_TYPE_FILE}" >> \${LOG_FILE}
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 提示: 请先运行主脚本选择版本类型，或手动创建该文件并写入 'pro' 或 'community'" >> \${LOG_FILE}
     exit 1
 fi
 
@@ -656,8 +665,13 @@ fi
 if [[ "\${VERSION_TYPE}" == "pro" ]]; then
     if [[ -f "\${LICENSE_KEY_FILE}" ]]; then
         LICENSE_KEY=\$(cat "\${LICENSE_KEY_FILE}")
+        if [[ -z "\${LICENSE_KEY}" ]]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] 错误: License Key 文件为空，文件路径: \${LICENSE_KEY_FILE}" >> \${LOG_FILE}
+            exit 1
+        fi
     else
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 错误: 找不到 License Key 文件" >> \${LOG_FILE}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 错误: 找不到 License Key 文件，文件路径: \${LICENSE_KEY_FILE}" >> \${LOG_FILE}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 提示: Pro 版需要 License Key，请先运行主脚本配置 License Key" >> \${LOG_FILE}
         exit 1
     fi
 fi
@@ -670,11 +684,13 @@ while true; do
             cd "${WORK_DIR}"
             chmod +x \${CLOUDREVE_PATH}
             if [[ "\${VERSION_TYPE}" == "pro" ]]; then
-                nohup \${CLOUDREVE_PATH} --license-key "\${LICENSE_KEY}" >> \${LOG_FILE} 2>&1 &
+                nohup setsid \${CLOUDREVE_PATH} --license-key "\${LICENSE_KEY}" >> \${LOG_FILE} 2>&1 &
             else
-                nohup \${CLOUDREVE_PATH} >> \${LOG_FILE} 2>&1 &
+                nohup setsid \${CLOUDREVE_PATH} >> \${LOG_FILE} 2>&1 &
             fi
-            echo \$! > \${PID_FILE}
+            NEW_PID=\$!
+            echo \${NEW_PID} > \${PID_FILE}
+            disown \${NEW_PID} 2>/dev/null || true
         fi
     else
         PID=\$(ps aux | grep -E '[^a-z]cloudreve[^\.sh]' | grep -v grep | grep -v cloudreve.sh | awk '{print \$2}' | head -n 1)
@@ -683,11 +699,13 @@ while true; do
             cd "${WORK_DIR}"
             chmod +x \${CLOUDREVE_PATH}
             if [[ "\${VERSION_TYPE}" == "pro" ]]; then
-                nohup \${CLOUDREVE_PATH} --license-key "\${LICENSE_KEY}" >> \${LOG_FILE} 2>&1 &
+                nohup setsid \${CLOUDREVE_PATH} --license-key "\${LICENSE_KEY}" >> \${LOG_FILE} 2>&1 &
             else
-                nohup \${CLOUDREVE_PATH} >> \${LOG_FILE} 2>&1 &
+                nohup setsid \${CLOUDREVE_PATH} >> \${LOG_FILE} 2>&1 &
             fi
-            echo \$! > \${PID_FILE}
+            NEW_PID=\$!
+            echo \${NEW_PID} > \${PID_FILE}
+            disown \${NEW_PID} 2>/dev/null || true
         else
             echo \${PID} > \${PID_FILE}
         fi
